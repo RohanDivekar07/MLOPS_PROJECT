@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  torchserve:
+    image: pytorch/torchserve:latest-cpu
+    container_name: benchmark-torchserve
+    restart: unless-stopped
+    ports:
+      - "8080:8080"  # REST Inference API
+      - "8081:8081"  # REST Management API
+      - "8082:8082"  # REST Metrics API
+      - "7070:7070"  # gRPC Inference API
+      - "7071:7071"  # gRPC Management API
+    volumes:
+      - ./models/torchserve/model_store:/home/model-server/model-store
+      - ./models/torchserve/config.properties:/home/model-server/config.properties
+    command: >
+      torchserve --start
+      --model-store /home/model-server/model-store
+      --models resnet50=resnet50.mar
+      --ts-config /home/model-server/config.properties
+      --foreground
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/ping || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 4096M
+
+  tfserving:
+    image: tensorflow/serving:latest
+    container_name: benchmark-tfserving
+    restart: unless-stopped
+    ports:
+      - "8501:8501"  # REST API
+      - "8500:8500"  # gRPC API
+    volumes:
+      - ./models/tfserving/resnet50:/models/resnet50
+      - ./models/tfserving/models.config:/models/models.config
+    command: >
+      --port=8500
+      --rest_api_port=8501
+      --model_config_file=/models/models.config
+      --enable_batching=true
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8501/v1/models/resnet50 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 4096M
+
+networks:
+  default:
+    name: benchmark-network
